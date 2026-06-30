@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { VictoryPie, VictoryLabel } from 'victory-native';
+import { PieChart } from 'react-native-gifted-charts';
 import { CategoryBreakdown } from '../types';
 import { formatCurrency } from '../utils/categoryColors';
 
@@ -18,60 +18,35 @@ export function DonutChart({ data, totalSpend }: DonutChartProps) {
     );
   }
 
-  const chartData = data.map((d) => ({
-    x: d.category,
-    y: d.total,
+  const pieData = data.map((d) => ({
+    value: d.total,
     color: d.color,
   }));
 
   return (
     <View style={styles.container}>
-      <VictoryPie
-        data={chartData}
-        colorScale={data.map((d) => d.color)}
-        innerRadius={80}
+      <PieChart
+        data={pieData}
+        donut
         radius={120}
-        width={280}
-        height={280}
-        padding={20}
-        labels={() => null}
-        animate={{ duration: 500 }}
+        innerRadius={80}
+        innerCircleColor="#FFF"
+        centerLabelComponent={() => (
+          <View style={styles.center}>
+            <Text style={styles.totalLabel}>Total Spend</Text>
+            <Text style={styles.totalAmount}>{formatCurrency(totalSpend)}</Text>
+          </View>
+        )}
       />
-      <View style={styles.center}>
-        <Text style={styles.totalLabel}>Total Spend</Text>
-        <Text style={styles.totalAmount}>{formatCurrency(totalSpend)}</Text>
-      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  center: {
-    position: 'absolute',
-    alignItems: 'center',
-  },
-  totalLabel: {
-    fontSize: 12,
-    color: '#888',
-    fontWeight: '500',
-  },
-  totalAmount: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1A1A2E',
-  },
-  empty: {
-    height: 280,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyText: {
-    color: '#888',
-    fontSize: 16,
-  },
+  container: { alignItems: 'center', justifyContent: 'center' },
+  center: { alignItems: 'center' },
+  totalLabel: { fontSize: 12, color: '#888', fontWeight: '500' },
+  totalAmount: { fontSize: 18, fontWeight: '700', color: '#1A1A2E' },
+  empty: { height: 240, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { color: '#888', fontSize: 16 },
 });

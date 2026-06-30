@@ -1,37 +1,37 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../services/supabase';
-import { Transaction, CategoryBreakdown } from '../types';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { fetchTransactions } from '../services/transactions';
 import { buildCategoryBreakdown } from '../utils/categoryColors';
+import { CategoryBreakdown, StatementType, Transaction } from '../types';
 
-export function useTransactions() {
+type TypeFilter = StatementType | 'all';
+
+export function useTransactions(statementType: TypeFilter = 'all') {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [breakdown, setBreakdown] = useState<CategoryBreakdown[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchTransactions();
-  }, []);
-
-  async function fetchTransactions() {
+  const load = useCallback(async () => {
     try {
-      setLoading(true);
-      const { data, error: sbError } = await supabase
-        .from('transactions')
-        .select('*')
-        .order('date', { ascending: false });
-
-      if (sbError) throw sbError;
-
-      const txns = (data ?? []) as Transaction[];
+      setError(null);
+      const txns = await fetchTransactions({ statementType });
       setTransactions(txns);
       setBreakdown(buildCategoryBreakdown(txns));
     } catch (err: any) {
-      setError(err.message ?? 'Failed to load transactions');
+      setError(err?.message ?? 'Failed to load transactions');
     } finally {
       setLoading(false);
     }
-  }
+  }, [statementType]);
 
-  return { transactions, breakdown, loading, error, refetch: fetchTransactions };
+  // Refetch every time the screen regains focus (e.g. after an upload).
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      load();
+    }, [load]),
+  );
+
+  return { transactions, breakdown, loading, error, refetch: load };
 }
