@@ -2,6 +2,7 @@
   "expo": {
     "name": "expense-tracker",
     "slug": "expense-tracker",
+    "owner": "tanmayprojects",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,10 +17,25 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
+      "package": "com.tanmayprojects.expensetracker",
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "24085e7f-922b-4537-af97-8910f8d06432"
+      }
+    },
+    "plugins": [
+      "expo-sharing",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Use Face ID to unlock Expense Tracker."
+        }
+      ]
+    ]
   }
 }
