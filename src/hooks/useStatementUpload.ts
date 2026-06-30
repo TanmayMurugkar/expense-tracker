@@ -1,17 +1,29 @@
 import { useState } from 'react';
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import { supabase } from '../services/supabase';
-import { UploadedFile } from '../types';
+import { createStatement, getStatementStatus } from '../services/statements';
+import { StatementType, UploadedFile } from '../types';
+
+const MAX_BYTES = 10 * 1024 * 1024; // 10 MB — mirrors the edge-function cap
+const ALLOWED_EXT = ['.pdf', '.csv', '.xlsx', '.xls'];
+
+type UploadResult = { ok: true; count?: number; warning?: string | null } | { ok: false; error: string };
 
 export function useStatementUpload() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
   async function pickDocument(): Promise<UploadedFile | null> {
     const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/pdf', 'text/csv'],
+      type: [
+        'application/pdf',
+        'text/csv',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel',
+      ],
       copyToCacheDirectory: true,
     });
 
@@ -26,57 +38,83 @@ export function useStatementUpload() {
     };
   }
 
-  async function uploadStatement(file: UploadedFile): Promise<boolean> {
+  async function uploadStatement(
+    file: UploadedFile,
+    statementType: StatementType,
+  ): Promise<UploadResult> {
     try {
       setUploading(true);
-      setProgress(0);
       setError(null);
+      setProgress(0);
+      setStatusText('Validating file…');
 
-      const fileContent = await FileSystem.readAsStringAsync(file.uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
+      // ── Client-side guards (defense-in-depth with the server) ──
+      const lowerName = file.name.toLowerCase();
+      if (!ALLOWED_EXT.some((ext) => lowerName.endsWith(ext))) {
+        throw new Error('Unsupported file type. Choose a PDF, Excel, or CSV.');
+      }
+      if (file.size && file.size > MAX_BYTES) {
+        throw new Error('File is larger than 10 MB.');
+      }
 
-      setProgress(40);
+      // ── Identify the user (path + ownership are scoped to them) ──
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('You must be signed in to upload.');
 
-      const fileName = `${Date.now()}_${file.name}`;
+      const bytes = await new File(file.uri).bytes();
+      setProgress(20);
+      setStatusText('Uploading…');
+
+      // Upload under the user's own prefix so storage RLS permits it.
+      const storagePath = `${user.id}/${Date.now()}_${file.name}`;
       const { error: uploadError } = await supabase.storage
         .from('statements')
-        .upload(fileName, decode(fileContent), {
-          contentType: file.mimeType,
-          upsert: false,
-        });
-
+        .upload(storagePath, bytes, { contentType: file.mimeType, upsert: false });
       if (uploadError) throw uploadError;
+      setProgress(45);
 
-      setProgress(80);
-
-      const { error: dbError } = await supabase.from('statements').insert({
-        file_name: file.name,
-        file_url: fileName,
-        uploaded_at: new Date().toISOString(),
-        parsed: false,
+      // ── Log the statement (status defaults to 'processing') ──
+      const statement = await createStatement({
+        userId: user.id,
+        fileName: file.name,
+        storagePath,
+        statementType,
       });
+      setProgress(60);
+      setStatusText('Processing your data…');
 
-      if (dbError) throw dbError;
+      // ── Invoke the parser (user_id is derived server-side from the JWT) ──
+      const { error: fnError } = await supabase.functions.invoke('parse-statement', {
+        body: { statementId: statement.id },
+      });
+      if (fnError) throw fnError;
 
+      // ── Poll status until the parser finishes ──
+      const finalStatus = await pollStatus(statement.id);
       setProgress(100);
-      return true;
+
+      if (finalStatus.status === 'failed') {
+        throw new Error(finalStatus.error_message ?? 'Parsing failed.');
+      }
+      return { ok: true, warning: finalStatus.error_message };
     } catch (err: any) {
-      setError(err.message ?? 'Upload failed');
-      return false;
+      const message = err?.message ?? 'Upload failed.';
+      setError(message);
+      return { ok: false, error: message };
     } finally {
       setUploading(false);
     }
   }
 
-  return { pickDocument, uploadStatement, uploading, progress, error };
-}
-
-function decode(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
+  async function pollStatus(statementId: string) {
+    // Poll for up to ~30s (15 × 2s) before giving up.
+    for (let i = 0; i < 15; i++) {
+      const s = await getStatementStatus(statementId);
+      if (s.status === 'completed' || s.status === 'failed') return s;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    return { status: 'failed' as const, error_message: 'Timed out while processing.' };
   }
-  return bytes;
+
+  return { pickDocument, uploadStatement, uploading, progress, statusText, error };
 }

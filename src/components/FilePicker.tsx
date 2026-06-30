@@ -10,11 +10,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { UploadedFile } from '../types';
 
 interface FilePickerProps {
-  onFilePicked: (file: UploadedFile) => void;
   onPickPress: () => void;
   selectedFile: UploadedFile | null;
   uploading: boolean;
   progress: number;
+  statusText?: string;
   error: string | null;
 }
 
@@ -23,6 +23,7 @@ export function FilePicker({
   selectedFile,
   uploading,
   progress,
+  statusText,
   error,
 }: FilePickerProps) {
   return (
@@ -60,7 +61,7 @@ export function FilePicker({
       {uploading && (
         <View style={styles.progressContainer}>
           <ActivityIndicator color="#4ECDC4" />
-          <Text style={styles.progressText}>Uploading... {progress}%</Text>
+          <Text style={styles.progressText}>{statusText || 'Uploading…'} {progress}%</Text>
           <View style={styles.progressBar}>
             <View style={[styles.progressFill, { width: `${progress}%` }]} />
           </View>
