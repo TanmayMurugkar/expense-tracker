@@ -24,6 +24,8 @@ interface AuthContextValue {
   ) => Promise<SignUpResult>;
   signOut: () => Promise<void>;
   signOutEverywhere: () => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  confirmPasswordReset: (email: string, token: string, newPassword: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -82,6 +84,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSession(null);
   }
 
+  // Sends a recovery email containing a 6-digit OTP code.
+  async function requestPasswordReset(email: string) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+    if (error) throw error;
+  }
+
+  // Verifies the recovery OTP, then sets the new password.
+  async function confirmPasswordReset(email: string, token: string, newPassword: string) {
+    const { error: verifyErr } = await supabase.auth.verifyOtp({
+      email: email.trim(),
+      token: token.trim(),
+      type: 'recovery',
+    });
+    if (verifyErr) throw verifyErr;
+
+    const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
+    if (updateErr) throw updateErr;
+  }
+
   const value: AuthContextValue = {
     session,
     user: session?.user ?? null,
@@ -90,6 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signUp,
     signOut,
     signOutEverywhere,
+    requestPasswordReset,
+    confirmPasswordReset,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

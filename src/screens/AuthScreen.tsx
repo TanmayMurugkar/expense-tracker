@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthProvider';
 import { ConsentModal } from '../components/ConsentModal';
+import { ForgotPasswordModal } from '../components/ForgotPasswordModal';
 import {
   validateEmail,
   validatePassword,
@@ -31,6 +32,7 @@ export function AuthScreen() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [consentVisible, setConsentVisible] = useState(false);
+  const [forgotVisible, setForgotVisible] = useState(false);
 
   async function handleSubmit() {
     setError(null);
@@ -140,6 +142,16 @@ export function AuthScreen() {
               </Text>
             )}
 
+            {mode === 'login' && (
+              <TouchableOpacity
+                style={styles.forgotWrap}
+                onPress={() => setForgotVisible(true)}
+                disabled={loading}
+              >
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </TouchableOpacity>
+            )}
+
             {error && (
               <View style={styles.errorBox}>
                 <Ionicons name="alert-circle" size={15} color="#FF6B6B" />
@@ -187,6 +199,12 @@ export function AuthScreen() {
         </View>
       </KeyboardAvoidingView>
 
+      <ForgotPasswordModal
+        visible={forgotVisible}
+        initialEmail={email}
+        onClose={() => setForgotVisible(false)}
+      />
+
       <ConsentModal
         visible={consentVisible}
         onAccept={handleConsentAccept}
@@ -216,6 +234,8 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, paddingVertical: 14, fontSize: 15, color: '#1A1A2E' },
   hint: { fontSize: 12, color: '#AAA', marginLeft: 4 },
+  forgotWrap: { alignSelf: 'flex-end' },
+  forgotText: { fontSize: 13, color: '#4ECDC4', fontWeight: '600' },
   submitBtn: {
     backgroundColor: '#4ECDC4',
     borderRadius: 12,
