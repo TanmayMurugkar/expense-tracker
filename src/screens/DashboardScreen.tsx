@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,14 +9,19 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { DonutChart } from '../components/DonutChart';
 import { CategoryLegend } from '../components/CategoryLegend';
-import { SpendBarChart } from '../components/SpendBarChart';
+import { SpendBarChart, WeekRange } from '../components/SpendBarChart';
+import { EmailIngestSetupModal } from '../components/EmailIngestSetupModal';
 import { useTransactions } from '../hooks/useTransactions';
+import { useProfile } from '../hooks/useProfile';
 import { useAuth } from '../context/AuthProvider';
 import { formatCurrency } from '../utils/categoryColors';
 import { Category, StatementType } from '../types';
+
+const EMAIL_PROMPT_KEY = 'email_ingest_prompted';
 
 type TypeFilter = StatementType | 'all';
 const FILTERS: { key: TypeFilter; label: string }[] = [
@@ -27,11 +32,25 @@ const FILTERS: { key: TypeFilter; label: string }[] = [
 
 export function DashboardScreen() {
   const { signOut } = useAuth();
+  const { profile } = useProfile();
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState<WeekRange | null>(null);
+  const [showEmailSetup, setShowEmailSetup] = useState(false);
 
   const { transactions, breakdown, loading, error, refetch } = useTransactions(typeFilter);
   const totalSpend = breakdown.reduce((sum, b) => sum + b.total, 0);
+
+  // First-run: offer email-ingestion setup once (after the profile loads).
+  useEffect(() => {
+    if (!profile?.ingest_token) return;
+    AsyncStorage.getItem(EMAIL_PROMPT_KEY).then((seen) => {
+      if (!seen) {
+        setShowEmailSetup(true);
+        AsyncStorage.setItem(EMAIL_PROMPT_KEY, 'true');
+      }
+    });
+  }, [profile?.ingest_token]);
 
   // Debit transactions for the selected category (the interactive feed).
   const feed = useMemo(() => {
@@ -40,6 +59,18 @@ export function DashboardScreen() {
       .filter((t) => t.transaction_type === 'debit' && t.category === selectedCategory)
       .slice(0, 10);
   }, [transactions, selectedCategory]);
+
+  // Debit transactions falling within the selected week bar.
+  const weekFeed = useMemo(() => {
+    if (!selectedWeek) return [];
+    return transactions.filter((t) => {
+      if (t.transaction_type !== 'debit') return false;
+      const d = new Date(t.transaction_date);
+      return d >= selectedWeek.start && d <= selectedWeek.end;
+    });
+  }, [transactions, selectedWeek]);
+
+  const weekTotal = weekFeed.reduce((s, t) => s + t.amount, 0);
 
   if (loading && transactions.length === 0) {
     return (
@@ -119,7 +150,37 @@ export function DashboardScreen() {
 
             <View style={styles.card}>
               <Text style={styles.sectionTitle}>Weekly Spend</Text>
-              <SpendBarChart transactions={transactions} />
+              <SpendBarChart
+                transactions={transactions}
+                selectedIndex={selectedWeek?.index ?? null}
+                onSelectWeek={setSelectedWeek}
+              />
+
+              {selectedWeek && (
+                <View style={styles.feed}>
+                  <View style={styles.weekHeader}>
+                    <Text style={styles.weekTitle}>
+                      Week of {selectedWeek.start.getDate()}/{selectedWeek.start.getMonth() + 1}
+                    </Text>
+                    <Text style={styles.weekTotal}>{formatCurrency(weekTotal)}</Text>
+                  </View>
+                  {weekFeed.length === 0 ? (
+                    <Text style={styles.feedEmpty}>No spend in this week.</Text>
+                  ) : (
+                    weekFeed.slice(0, 12).map((t) => (
+                      <View key={t.id} style={styles.feedRow}>
+                        <View style={styles.feedLeft}>
+                          <Text style={styles.feedMerchant} numberOfLines={1}>
+                            {t.clean_merchant ?? t.description}
+                          </Text>
+                          <Text style={styles.feedDate}>{t.transaction_date} · {t.category}</Text>
+                        </View>
+                        <Text style={styles.feedAmount}>{formatCurrency(t.amount)}</Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+              )}
             </View>
 
             <View style={styles.card}>
@@ -154,6 +215,12 @@ export function DashboardScreen() {
           </>
         )}
       </ScrollView>
+
+      <EmailIngestSetupModal
+        visible={showEmailSetup}
+        ingestToken={profile?.ingest_token}
+        onClose={() => setShowEmailSetup(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -213,6 +280,9 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '600', color: '#555' },
   emptyText: { fontSize: 13, color: '#999', textAlign: 'center', lineHeight: 18 },
   feed: { marginTop: 12, gap: 2 },
+  weekHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  weekTitle: { fontSize: 14, fontWeight: '700', color: '#1A1A2E' },
+  weekTotal: { fontSize: 14, fontWeight: '700', color: '#2BA89F' },
   feedEmpty: { fontSize: 13, color: '#AAA', paddingVertical: 8 },
   feedRow: {
     flexDirection: 'row',

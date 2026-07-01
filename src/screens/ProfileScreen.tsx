@@ -26,8 +26,8 @@ import {
   setBiometricEnabled,
   authenticateBiometric,
 } from '../services/biometrics';
+import { EmailIngestSetupModal } from '../components/EmailIngestSetupModal';
 import { SUPPORTED_CURRENCIES } from '../types';
-import { ingestAddress } from '../constants/config';
 
 const LOCK_OPTIONS = [1, 2, 5, 10];
 
@@ -39,6 +39,7 @@ export function ProfileScreen() {
 
   const [biometric, setBiometric] = useState(false);
   const [nameModal, setNameModal] = useState(false);
+  const [emailSetupVisible, setEmailSetupVisible] = useState(false);
 
   // Load the saved biometric preference on mount.
   React.useEffect(() => {
@@ -187,15 +188,7 @@ export function ProfileScreen() {
           <SettingRow
             icon="mail-open-outline"
             label="Email statements in"
-            onPress={() => {
-              const addr = ingestAddress(profile?.ingest_token);
-              Alert.alert(
-                'Forward statements here',
-                addr
-                  ? `Set your bank alerts (or forward statements) to:\n\n${addr}\n\nOnly emails from recognised bank domains are accepted.`
-                  : 'Your email-in address is being set up. Pull to refresh shortly.',
-              );
-            }}
+            onPress={() => setEmailSetupVisible(true)}
           />
           <SettingRow icon="download-outline" label="Export my data" onPress={handleExport} />
           <SettingRow
@@ -297,6 +290,12 @@ export function ProfileScreen() {
           )}
         </TouchableOpacity>
       </CenterModal>
+
+      <EmailIngestSetupModal
+        visible={emailSetupVisible}
+        ingestToken={profile?.ingest_token}
+        onClose={() => setEmailSetupVisible(false)}
+      />
     </SafeAreaView>
   );
 }
